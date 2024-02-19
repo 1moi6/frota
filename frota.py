@@ -7,7 +7,7 @@ from joblib import Parallel, delayed, effective_n_jobs
 class Frota:
     def __init__(self, Periodo, TamanhoFrota, Demanda):
         while len(Demanda) < Periodo+1:
-            Demanda.append(random.randint(0, TamanhoFrota))
+            Demanda.append(random.randint(int(0.45*TamanhoFrota), TamanhoFrota))
 
         self.ProbQuebra_0 = 0.01
         self.Depreciacao = 0.4
@@ -21,14 +21,10 @@ class Frota:
         self.Acoes = {}
         self.Politica = []
         self.__num_estados__ = (Periodo+1)**TamanhoFrota
-        self.__tam_partes__ = min(
-            int(self.__num_estados__/effective_n_jobs()), 100000)
         self.__num_acoes__ = 2**TamanhoFrota
         self.ConstroeEstadosP()
         self.ConstroeAcoes()
-        self.__tam_partes__ = min(
-            int(self.__num_estados__/effective_n_jobs()), 100000)
-
+        
     def num2coefs(self, numero, base):
         coeficientes = [0]*self.TamanhoFrota
         if numero == 0:
@@ -58,6 +54,8 @@ class Frota:
         self.Acoes = acoes
 
     def ConstroeEstadosP(self):
+        tam_partes= min(int(self.__num_estados__/effective_n_jobs()), 10000)
+        
         estados = {}
         estados[(0, 0)] = 0
 
@@ -71,8 +69,8 @@ class Frota:
 
             return estados_locais
 
-        intervals = [(i, min(i + self.__tam_partes__, self.__num_estados__))
-                     for i in range(0, self.__num_estados__, self.__tam_partes__)]
+        intervals = [(i, min(i + tam_partes, self.__num_estados__))
+                     for i in range(0, self.__num_estados__, tam_partes)]
         results = Parallel(n_jobs=-1)(delayed(worker)(start, end)
                                       for start, end in intervals)
 
@@ -238,6 +236,8 @@ class Frota:
     def ValueIterationP(self, tol=1.0e-10, nsim=500):
         sim, D, norms, sim = 0, 10, [], 0
 
+        tam_partes= min(int(len(self.Estados)/effective_n_jobs()), 10000)
+
         self.Politica = {est: 0 for est in list(self.Estados)}
 
         def particionar_dicionario(dicionario, tamanho_parte):
@@ -266,7 +266,7 @@ class Frota:
                 for ja, a in enumerate(ac):
                     v_aux2 = 0
                     for je, e in enumerate(nst[ja]):
-                        v_aux2 = v_aux2 + prs[ja][je]*(rcs[ja][je]+V[e])
+                        v_aux2 = v_aux2 + prs[ja][je]*(rcs[ja][je]+self.Estados[e])
                     v_aux.append(v_aux2)
 
                 P1[est] = ac[np.argmax(v_aux)]
@@ -276,8 +276,8 @@ class Frota:
             return V1, P1, D1
 
         while (D > tol and sim < nsim):
-            V = {e: v for e, v in self.Estados.items()}
-            partes = particionar_dicionario(V, self.__tam_partes__)
+            # V = {e: v for e, v in self.Estados.items()}
+            partes = particionar_dicionario({e: v for e, v in self.Estados.items()}, tam_partes)
             results = Parallel(n_jobs=-1)(delayed(loop)(prt) for prt in partes)
 
             D = 0
